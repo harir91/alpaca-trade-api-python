@@ -20,11 +20,14 @@ from typing import List, Callable
 
 
 class _StreamConn(object):
-    def __init__(self, key_id: str,
-                 secret_key: str,
-                 base_url: URL,
-                 oauth: str = None,
-                 raw_data: bool = False):
+    def __init__(
+        self,
+        key_id: str,
+        secret_key: str,
+        base_url: URL,
+        oauth: str = None,
+        raw_data: bool = False,
+    ):
         """
         :param raw_data: should we return stream data raw or wrap it with
                          Entity objects.
@@ -32,53 +35,57 @@ class _StreamConn(object):
         self._key_id = key_id
         self._secret_key = secret_key
         self._oauth = oauth
-        self._base_url = re.sub(r'^http', 'ws', base_url)
-        self._endpoint = self._base_url + '/stream'
+        self._base_url = re.sub(r"^http", "ws", base_url)
+        self._endpoint = self._base_url + "/stream"
         self._handlers = {}
         self._handler_symbols = {}
         self._streams = set([])
         self._ws = None
-        self._retry = int(os.environ.get('APCA_RETRY_MAX', 3))
-        self._retry_wait = int(os.environ.get('APCA_RETRY_WAIT', 3))
+        self._retry = int(os.environ.get("APCA_RETRY_MAX", 3))
+        self._retry_wait = int(os.environ.get("APCA_RETRY_WAIT", 3))
         self._retries = 0
         self._consume_task = None
         self._raw_data = raw_data
 
     async def _connect(self):
         message = {
-            'action': 'authenticate',
-            'data': {
-                'oauth_token': self._oauth
-            } if self._oauth else {
-                'key_id': self._key_id,
-                'secret_key': self._secret_key,
-            }
+            "action": "authenticate",
+            "data": {"oauth_token": self._oauth}
+            if self._oauth
+            else {
+                "key_id": self._key_id,
+                "secret_key": self._secret_key,
+            },
         }
 
         ws = await websockets.connect(self._endpoint)
         await ws.send(json.dumps(message))
         r = await ws.recv()
         if isinstance(r, bytes):
-            r = r.decode('utf-8')
+            r = r.decode("utf-8")
         msg = json.loads(r)
 
-        if msg.get('data', {}).get('status'):
-            status = msg.get('data').get('status')
-            if status != 'authorized':
+        if msg.get("data", {}).get("status"):
+            status = msg.get("data").get("status")
+            if status != "authorized":
                 raise ValueError(
-                    (f"Invalid Alpaca API credentials, Failed to "
-                     f"authenticate: {msg}")
+                    (
+                        f"Invalid Alpaca API credentials, Failed to "
+                        f"authenticate: {msg}"
+                    )
                 )
             else:
                 self._retries = 0
-        elif msg.get('data', {}).get('error'):
-            raise Exception(f"Error while connecting to {self._endpoint}:"
-                            f"{msg.get('data').get('error')}")
+        elif msg.get("data", {}).get("error"):
+            raise Exception(
+                f"Error while connecting to {self._endpoint}:"
+                f"{msg.get('data').get('error')}"
+            )
         else:
             self._retries = 0
 
         self._ws = ws
-        await self._dispatch('authorized', msg)
+        await self._dispatch("authorized", msg)
         logging.info(f"connected to: {self._endpoint}")
         self._consume_task = asyncio.ensure_future(self._consume_msg())
 
@@ -92,9 +99,9 @@ class _StreamConn(object):
             while True:
                 r = await ws.recv()
                 if isinstance(r, bytes):
-                    r = r.decode('utf-8')
+                    r = r.decode("utf-8")
                 msg = json.loads(r)
-                stream = msg.get('stream')
+                stream = msg.get("stream")
                 if stream is not None:
                     await self._dispatch(stream, msg)
         except websockets.WebSocketException as wse:
@@ -110,7 +117,7 @@ class _StreamConn(object):
             try:
                 await self._connect()
                 if self._streams:
-                    await self.subscribe(self._streams)
+                    await self.subscribe(list(self._streams))
                 break
             except websockets.WebSocketException as wse:
                 logging.warn(wse)
@@ -123,26 +130,38 @@ class _StreamConn(object):
     async def subscribe(self, channels):
         if isinstance(channels, str):
             channels = [channels]
+        elif isinstance(channels, set):
+            channels = list(channels)
         if len(channels) > 0:
             await self._ensure_ws()
             self._streams |= set(channels)
-            await self._ws.send(json.dumps({
-                'action': 'listen',
-                'data': {
-                    'streams': channels,
-                }
-            }))
+            await self._ws.send(
+                json.dumps(
+                    {
+                        "action": "listen",
+                        "data": {
+                            "streams": channels,
+                        },
+                    }
+                )
+            )
 
     async def unsubscribe(self, channels):
         if isinstance(channels, str):
             channels = [channels]
+        elif isinstance(channels, set):
+            channels = list(channels)
         if len(channels) > 0:
-            await self._ws.send(json.dumps({
-                'action': 'unlisten',
-                'data': {
-                    'streams': channels,
-                }
-            }))
+            await self._ws.send(
+                json.dumps(
+                    {
+                        "action": "unlisten",
+                        "data": {
+                            "streams": channels,
+                        },
+                    }
+                )
+            )
 
     async def close(self):
         await self.cancel_task()
@@ -155,19 +174,20 @@ class _StreamConn(object):
             self._consume_task.cancel()
 
     def _cast(self, channel, msg):
-        if channel == 'account_updates':
+        if channel == "account_updates":
             return Account(msg)
-        if channel.startswith('T.'):
-            return Trade({trade_mapping[k]: v for k,
-                          v in msg.items() if k in trade_mapping})
-        if channel.startswith('Q.'):
-            return Quote({quote_mapping[k]: v for k,
-                          v in msg.items() if k in quote_mapping})
-        if channel.startswith('A.') or channel.startswith('AM.'):
+        if channel.startswith("T."):
+            return Trade(
+                {trade_mapping[k]: v for k, v in msg.items() if k in trade_mapping}
+            )
+        if channel.startswith("Q."):
+            return Quote(
+                {quote_mapping[k]: v for k, v in msg.items() if k in quote_mapping}
+            )
+        if channel.startswith("A.") or channel.startswith("AM."):
             # to be compatible with REST Agg
-            msg['t'] = msg['s']
-            return Agg({agg_mapping[k]: v for k,
-                        v in msg.items() if k in agg_mapping})
+            msg["t"] = msg["s"]
+            return Agg({agg_mapping[k]: v for k, v in msg.items() if k in agg_mapping})
         return Entity(msg)
 
     async def _dispatch(self, channel, msg):
@@ -176,7 +196,7 @@ class _StreamConn(object):
                 if self._raw_data:
                     await handler(self, channel, msg)
                 else:
-                    ent = self._cast(channel, msg['data'])
+                    ent = self._cast(channel, msg["data"])
                     await handler(self, channel, ent)
 
     def on(self, channel_pat, symbols=None):
@@ -188,7 +208,7 @@ class _StreamConn(object):
 
     def register(self, channel_pat, func: Callable, symbols=None):
         if not asyncio.iscoroutinefunction(func):
-            raise ValueError('handler must be a coroutine function')
+            raise ValueError("handler must be a coroutine function")
         if isinstance(channel_pat, str):
             channel_pat = re.compile(channel_pat)
         self._handlers[channel_pat] = func
@@ -203,15 +223,16 @@ class _StreamConn(object):
 
 class StreamConn(object):
     def __init__(
-            self,
-            key_id: str = None,
-            secret_key: str = None,
-            base_url: URL = None,
-            data_url: URL = None,
-            data_stream: str = None,
-            debug: bool = False,
-            oauth: str = None,
-            raw_data: bool = False):
+        self,
+        key_id: str = None,
+        secret_key: str = None,
+        base_url: URL = None,
+        data_url: URL = None,
+        data_stream: str = None,
+        debug: bool = False,
+        oauth: str = None,
+        raw_data: bool = False,
+    ):
         """
         :param base_url: api.alpaca.markets
         :param data_url: data.alpaca.markets
@@ -220,49 +241,53 @@ class StreamConn(object):
         :param raw_data: should we return stream data raw or wrap it with
                          Entity objects.
         """
-        self._key_id, self._secret_key, self._oauth = \
-            get_credentials(key_id, secret_key, oauth)
+        self._key_id, self._secret_key, self._oauth = get_credentials(
+            key_id, secret_key, oauth
+        )
         self._base_url = base_url or get_base_url()
         self._data_url = data_url or get_data_url()
         if data_stream is not None:
-            if data_stream in ('alpacadatav1', 'polygon'):
+            if data_stream in ("alpacadatav1", "polygon"):
                 _data_stream = data_stream
             else:
-                raise ValueError('invalid data_stream name {}'.format(
-                    data_stream))
+                raise ValueError("invalid data_stream name {}".format(data_stream))
         else:
-            _data_stream = 'alpacadatav1'
+            _data_stream = "alpacadatav1"
         self._data_stream = _data_stream
         self._debug = debug
         self._raw_data = raw_data
         self._stop_stream_queue = queue.Queue()
 
-        self.trading_ws = _StreamConn(self._key_id,
-                                      self._secret_key,
-                                      self._base_url,
-                                      self._oauth,
-                                      raw_data=self._raw_data)
+        self.trading_ws = _StreamConn(
+            self._key_id,
+            self._secret_key,
+            self._base_url,
+            self._oauth,
+            raw_data=self._raw_data,
+        )
 
-        if self._data_stream == 'polygon':
+        if self._data_stream == "polygon":
             # DATA_PROXY_WS is used for the alpaca-proxy-agent.
             # this is how we set the polygon ws to go through the proxy agent
-            endpoint = os.environ.get("DATA_PROXY_WS", '')
+            endpoint = os.environ.get("DATA_PROXY_WS", "")
             if endpoint:
-                os.environ['POLYGON_WS_URL'] = endpoint
+                os.environ["POLYGON_WS_URL"] = endpoint
             self.data_ws = polygon.StreamConn(
-                self._key_id + '-staging' if 'staging' in self._base_url else
-                self._key_id,
-                raw_data=self._raw_data
+                self._key_id + "-staging"
+                if "staging" in self._base_url
+                else self._key_id,
+                raw_data=self._raw_data,
             )
-            self._data_prefixes = (('Q.', 'T.', 'A.', 'AM.'))
+            self._data_prefixes = ("Q.", "T.", "A.", "AM.")
         else:
-            self.data_ws = _StreamConn(self._key_id,
-                                       self._secret_key,
-                                       self._data_url,
-                                       self._oauth,
-                                       raw_data=self._raw_data)
-            self._data_prefixes = (
-                ('Q.', 'T.', 'AM.', 'alpacadatav1/'))
+            self.data_ws = _StreamConn(
+                self._key_id,
+                self._secret_key,
+                self._data_url,
+                self._oauth,
+                raw_data=self._raw_data,
+            )
+            self._data_prefixes = ("Q.", "T.", "AM.", "alpacadatav1/")
 
         self._handlers = {}
         self._handler_symbols = {}
@@ -285,21 +310,24 @@ class StreamConn(object):
             await conn.connect()
 
     async def subscribe(self, channels: List[str]):
-        '''Start subscribing to channels.
+        """Start subscribing to channels.
         If the necessary connection isn't open yet, it opens now.
         This may raise ValueError if a channel is not recognized.
-        '''
+        """
         trading_channels, data_channels = [], []
 
         for c in channels:
-            if c in ('trade_updates', 'account_updates'):
+            if c in ("trade_updates", "account_updates"):
                 trading_channels.append(c)
             elif c.startswith(self._data_prefixes):
                 data_channels.append(c)
             else:
                 raise ValueError(
-                    ('unknown channel {} (you may need to specify ' +
-                     'the right data_stream)').format(c))
+                    (
+                        "unknown channel {} (you may need to specify "
+                        + "the right data_stream)"
+                    ).format(c)
+                )
 
         if trading_channels:
             await self._ensure_ws(self.trading_ws)
@@ -309,12 +337,9 @@ class StreamConn(object):
             await self.data_ws.subscribe(data_channels)
 
     async def unsubscribe(self, channels: List[str]):
-        '''Handle unsubscribing from channels.'''
+        """Handle unsubscribing from channels."""
 
-        data_channels = [
-            c for c in channels
-            if c.startswith(self._data_prefixes)
-        ]
+        data_channels = [c for c in channels if c.startswith(self._data_prefixes)]
 
         if data_channels:
             await self.data_ws.unsubscribe(data_channels)
@@ -326,9 +351,9 @@ class StreamConn(object):
         )
 
     def run(self, initial_channels: List[str] = []):
-        '''Run forever and block until exception is raised.
+        """Run forever and block until exception is raised.
         initial_channels is the channels to start with.
-        '''
+        """
         loop = self.loop
         should_renew = True  # should renew connection if it disconnects
         while should_renew:
@@ -342,7 +367,7 @@ class StreamConn(object):
                 logging.info("Exiting on Interrupt")
                 should_renew = False
             except Exception as e:
-                m = 'consume cancelled' if isinstance(e, CancelledError) else e
+                m = "consume cancelled" if isinstance(e, CancelledError) else e
                 logging.error(f"error while consuming ws messages: {m}")
                 if self._debug:
                     traceback.print_exc()
@@ -365,22 +390,28 @@ class StreamConn(object):
             await self.data_ws.close()
             self.data_ws = None
         if renew:
-            self.trading_ws = _StreamConn(self._key_id,
-                                          self._secret_key,
-                                          self._base_url,
-                                          self._oauth,
-                                          raw_data=self._raw_data)
-            if self._data_stream == 'polygon':
+            self.trading_ws = _StreamConn(
+                self._key_id,
+                self._secret_key,
+                self._base_url,
+                self._oauth,
+                raw_data=self._raw_data,
+            )
+            if self._data_stream == "polygon":
                 self.data_ws = polygon.StreamConn(
-                    self._key_id + '-staging' if 'staging' in
-                    self._base_url else self._key_id,
-                    raw_data=self._raw_data)
+                    self._key_id + "-staging"
+                    if "staging" in self._base_url
+                    else self._key_id,
+                    raw_data=self._raw_data,
+                )
             else:
-                self.data_ws = _StreamConn(self._key_id,
-                                           self._secret_key,
-                                           self._data_url,
-                                           self._oauth,
-                                           raw_data=self._raw_data)
+                self.data_ws = _StreamConn(
+                    self._key_id,
+                    self._secret_key,
+                    self._data_url,
+                    self._oauth,
+                    raw_data=self._raw_data,
+                )
 
     async def stop_ws(self):
         """
@@ -403,7 +434,7 @@ class StreamConn(object):
 
     def register(self, channel_pat, func: Callable, symbols=None):
         if not asyncio.iscoroutinefunction(func):
-            raise ValueError('handler must be a coroutine function')
+            raise ValueError("handler must be a coroutine function")
         if isinstance(channel_pat, str):
             channel_pat = re.compile(channel_pat)
         self._handlers[channel_pat] = func

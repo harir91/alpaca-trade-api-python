@@ -9,15 +9,37 @@ from .common import (
     get_base_url,
     get_data_url,
     get_credentials,
-    get_api_version, URL, FLOAT,
+    get_api_version,
+    URL,
+    FLOAT,
 )
 from .entity import (
-    Bar, Entity, Account, AccountConfigurations, AccountActivity,
-    Asset, Order, Position, BarSet, Clock, Calendar,
-    Aggs, Trade, Quote, Watchlist, PortfolioHistory
+    Bar,
+    Entity,
+    Account,
+    AccountConfigurations,
+    AccountActivity,
+    Asset,
+    Order,
+    Position,
+    BarSet,
+    Clock,
+    Calendar,
+    Aggs,
+    Trade,
+    Quote,
+    Watchlist,
+    PortfolioHistory,
 )
 from .entity_v2 import (
-    BarsV2, SnapshotV2, SnapshotsV2, TradesV2, TradeV2, QuotesV2, QuoteV2)
+    BarsV2,
+    SnapshotV2,
+    SnapshotsV2,
+    TradesV2,
+    TradeV2,
+    QuotesV2,
+    QuoteV2,
+)
 from . import polygon
 
 logger = logging.getLogger(__name__)
@@ -45,18 +67,18 @@ class APIError(Exception):
     """
 
     def __init__(self, error, http_error=None):
-        super().__init__(error['message'])
+        super().__init__(error["message"])
         self._error = error
         self._http_error = http_error
 
     @property
     def code(self):
-        return self._error['code']
+        return self._error["code"]
 
     @property
     def status_code(self):
         http_error = self._http_error
-        if http_error is not None and hasattr(http_error, 'response'):
+        if http_error is not None and hasattr(http_error, "response"):
             return http_error.response.status_code
 
     @property
@@ -78,58 +100,59 @@ class TimeFrame(Enum):
 
 
 class REST(object):
-    def __init__(self,
-                 key_id: str = None,
-                 secret_key: str = None,
-                 base_url: URL = None,
-                 api_version: str = None,
-                 oauth=None,
-                 raw_data: bool = False
-                 ):
+    def __init__(
+        self,
+        key_id: str = None,
+        secret_key: str = None,
+        base_url: URL = None,
+        api_version: str = None,
+        oauth=None,
+        raw_data: bool = False,
+    ):
         """
         :param raw_data: should we return api response raw or wrap it with
                          Entity objects.
         """
         self._key_id, self._secret_key, self._oauth = get_credentials(
-            key_id, secret_key, oauth)
+            key_id, secret_key, oauth
+        )
         self._base_url: URL = URL(base_url or get_base_url())
         self._api_version = get_api_version(api_version)
         self._session = requests.Session()
         self._use_raw_data = raw_data
-        self._retry = int(os.environ.get('APCA_RETRY_MAX', 3))
-        self._retry_wait = int(os.environ.get('APCA_RETRY_WAIT', 3))
-        self._retry_codes = [int(o) for o in os.environ.get(
-            'APCA_RETRY_CODES', '429,504').split(',')]
+        self._retry = int(os.environ.get("APCA_RETRY_MAX", 3))
+        self._retry_wait = int(os.environ.get("APCA_RETRY_WAIT", 3))
+        self._retry_codes = [
+            int(o) for o in os.environ.get("APCA_RETRY_CODES", "429,504").split(",")
+        ]
         self.polygon = polygon.REST(
-            self._key_id, 'staging' in self._base_url, self._use_raw_data)
+            self._key_id, "staging" in self._base_url, self._use_raw_data
+        )
 
-    def _request(self,
-                 method,
-                 path,
-                 data=None,
-                 base_url: URL = None,
-                 api_version: str = None):
+    def _request(
+        self, method, path, data=None, base_url: URL = None, api_version: str = None
+    ):
         base_url = base_url or self._base_url
         version = api_version if api_version else self._api_version
-        url: URL = URL(base_url + '/' + version + path)
+        url: URL = URL(base_url + "/" + version + path)
         headers = {}
         if self._oauth:
-            headers['Authorization'] = 'Bearer ' + self._oauth
+            headers["Authorization"] = "Bearer " + self._oauth
         else:
-            headers['APCA-API-KEY-ID'] = self._key_id
-            headers['APCA-API-SECRET-KEY'] = self._secret_key
+            headers["APCA-API-KEY-ID"] = self._key_id
+            headers["APCA-API-SECRET-KEY"] = self._secret_key
         opts = {
-            'headers':         headers,
+            "headers": headers,
             # Since we allow users to set endpoint URL via env var,
             # human error to put non-SSL endpoint could exploit
             # uncanny issues in non-GET request redirecting http->https.
             # It's better to fail early if the URL isn't right.
-            'allow_redirects': False,
+            "allow_redirects": False,
         }
-        if method.upper() in ['GET', 'DELETE']:
-            opts['params'] = data
+        if method.upper() in ["GET", "DELETE"]:
+            opts["params"] = data
         else:
-            opts['json'] = data
+            opts["json"] = data
 
         retry = self._retry
         if retry < 0:
@@ -140,9 +163,9 @@ class REST(object):
             except RetryException:
                 retry_wait = self._retry_wait
                 logger.warning(
-                    'sleep {} seconds and retrying {} '
-                    '{} more time(s)...'.format(
-                        retry_wait, url, retry))
+                    "sleep {} seconds and retrying {} "
+                    "{} more time(s)...".format(retry_wait, url, retry)
+                )
                 time.sleep(retry_wait)
                 retry -= 1
                 continue
@@ -162,53 +185,58 @@ class REST(object):
             # retry if we hit Rate Limit
             if resp.status_code in retry_codes and retry > 0:
                 raise RetryException()
-            if 'code' in resp.text:
+            if "code" in resp.text:
                 error = resp.json()
-                if 'code' in error:
+                if "code" in error:
                     raise APIError(error, http_error)
             else:
                 raise
-        if resp.text != '':
+        if resp.text != "":
             return resp.json()
         return None
 
     def get(self, path, data=None):
-        return self._request('GET', path, data)
+        return self._request("GET", path, data)
 
     def post(self, path, data=None):
-        return self._request('POST', path, data)
+        return self._request("POST", path, data)
 
     def put(self, path, data=None):
-        return self._request('PUT', path, data)
+        return self._request("PUT", path, data)
 
     def patch(self, path, data=None):
-        return self._request('PATCH', path, data)
+        return self._request("PATCH", path, data)
 
     def delete(self, path, data=None):
-        return self._request('DELETE', path, data)
+        return self._request("DELETE", path, data)
 
-    def data_get(self, path, data=None, api_version='v1'):
+    def data_get(self, path, data=None, api_version="v1"):
         base_url: URL = get_data_url()
         return self._request(
-            'GET', path, data, base_url=base_url, api_version=api_version,
+            "GET",
+            path,
+            data,
+            base_url=base_url,
+            api_version=api_version,
         )
 
     def get_account(self) -> Account:
         """Get the account"""
-        resp = self.get('/account')
+        resp = self.get("/account")
         return self.response_wrapper(resp, Account)
 
     def get_account_configurations(self) -> AccountConfigurations:
         """Get account configs"""
-        resp = self.get('/account/configurations')
+        resp = self.get("/account/configurations")
         return self.response_wrapper(resp, AccountConfigurations)
 
     def update_account_configurations(
-            self,
-            no_shorting: bool = None,
-            dtbp_check: str = None,
-            trade_confirm_email: str = None,
-            suspend_trade: bool = None) -> AccountConfigurations:
+        self,
+        no_shorting: bool = None,
+        dtbp_check: str = None,
+        trade_confirm_email: str = None,
+        suspend_trade: bool = None,
+    ) -> AccountConfigurations:
         """
         alpaca.markets/docs/api-documentation/api-v2/account-configuration/
         Update account configs
@@ -217,26 +245,27 @@ class REST(object):
         """
         params = {}
         if no_shorting is not None:
-            params['no_shorting'] = no_shorting
+            params["no_shorting"] = no_shorting
         if dtbp_check is not None:
-            params['dtbp_check'] = dtbp_check
+            params["dtbp_check"] = dtbp_check
         if trade_confirm_email is not None:
-            params['trade_confirm_email'] = trade_confirm_email
+            params["trade_confirm_email"] = trade_confirm_email
         if suspend_trade is not None:
-            params['suspend_trade'] = suspend_trade
-        resp = self.patch('/account/configurations', params)
+            params["suspend_trade"] = suspend_trade
+        resp = self.patch("/account/configurations", params)
         return self.response_wrapper(resp, AccountConfigurations)
 
-    def list_orders(self,
-                    status: str = None,
-                    limit: int = None,
-                    after: str = None,
-                    until: str = None,
-                    direction: str = None,
-                    params=None,
-                    nested: bool = None,
-                    symbols: List[str] = None
-                    ) -> Orders:
+    def list_orders(
+        self,
+        status: str = None,
+        limit: int = None,
+        after: str = None,
+        until: str = None,
+        direction: str = None,
+        params=None,
+        nested: bool = None,
+        symbols: List[str] = None,
+    ) -> Orders:
         """
         Get a list of orders
         https://docs.alpaca.markets/web-api/orders/#get-a-list-of-orders
@@ -253,42 +282,44 @@ class REST(object):
         if params is None:
             params = dict()
         if limit is not None:
-            params['limit'] = limit
+            params["limit"] = limit
         if after is not None:
-            params['after'] = after
+            params["after"] = after
         if until is not None:
-            params['until'] = until
+            params["until"] = until
         if direction is not None:
-            params['direction'] = direction
+            params["direction"] = direction
         if status is not None:
-            params['status'] = status
+            params["status"] = status
         if nested is not None:
-            params['nested'] = nested
+            params["nested"] = nested
         if symbols is not None:
-            params['symbols'] = ",".join(symbols)
-        url = '/orders'
+            params["symbols"] = ",".join(symbols)
+        url = "/orders"
         resp = self.get(url, params)
         if self._use_raw_data:
             return resp
         else:
             return [self.response_wrapper(o, Order) for o in resp]
 
-    def submit_order(self,
-                     symbol: str,
-                     qty: float = None,
-                     side: str = "buy",
-                     type: str = "market",
-                     time_in_force: str = "day",
-                     limit_price: str = None,
-                     stop_price: str = None,
-                     client_order_id: str = None,
-                     extended_hours: bool = None,
-                     order_class: str = None,
-                     take_profit: dict = None,
-                     stop_loss: dict = None,
-                     trail_price: str = None,
-                     trail_percent: str = None,
-                     notional: float = None):
+    def submit_order(
+        self,
+        symbol: str,
+        qty: float = None,
+        side: str = "buy",
+        type: str = "market",
+        time_in_force: str = "day",
+        limit_price: str = None,
+        stop_price: str = None,
+        client_order_id: str = None,
+        extended_hours: bool = None,
+        order_class: str = None,
+        take_profit: dict = None,
+        stop_loss: dict = None,
+        trail_price: str = None,
+        trail_percent: str = None,
+        notional: float = None,
+    ):
         """
         :param symbol: symbol or asset ID
         :param qty: float. Mutually exclusive with "notional".
@@ -311,67 +342,67 @@ class REST(object):
         """
         """Request a new order"""
         params = {
-            'symbol':        symbol,
-            'side':          side,
-            'type':          type,
-            'time_in_force': time_in_force
+            "symbol": symbol,
+            "side": side,
+            "type": type,
+            "time_in_force": time_in_force,
         }
         if qty is not None:
-            params['qty'] = qty
+            params["qty"] = qty
         if notional is not None:
-            params['notional'] = notional
+            params["notional"] = notional
         if limit_price is not None:
-            params['limit_price'] = FLOAT(limit_price)
+            params["limit_price"] = FLOAT(limit_price)
         if stop_price is not None:
-            params['stop_price'] = FLOAT(stop_price)
+            params["stop_price"] = FLOAT(stop_price)
         if client_order_id is not None:
-            params['client_order_id'] = client_order_id
+            params["client_order_id"] = client_order_id
         if extended_hours is not None:
-            params['extended_hours'] = extended_hours
+            params["extended_hours"] = extended_hours
         if order_class is not None:
-            params['order_class'] = order_class
+            params["order_class"] = order_class
         if take_profit is not None:
-            if 'limit_price' in take_profit:
-                take_profit['limit_price'] = FLOAT(take_profit['limit_price'])
-            params['take_profit'] = take_profit
+            if "limit_price" in take_profit:
+                take_profit["limit_price"] = FLOAT(take_profit["limit_price"])
+            params["take_profit"] = take_profit
         if stop_loss is not None:
-            if 'limit_price' in stop_loss:
-                stop_loss['limit_price'] = FLOAT(stop_loss['limit_price'])
-            if 'stop_price' in stop_loss:
-                stop_loss['stop_price'] = FLOAT(stop_loss['stop_price'])
-            params['stop_loss'] = stop_loss
+            if "limit_price" in stop_loss:
+                stop_loss["limit_price"] = FLOAT(stop_loss["limit_price"])
+            if "stop_price" in stop_loss:
+                stop_loss["stop_price"] = FLOAT(stop_loss["stop_price"])
+            params["stop_loss"] = stop_loss
         if trail_price is not None:
-            params['trail_price'] = trail_price
+            params["trail_price"] = trail_price
         if trail_percent is not None:
-            params['trail_percent'] = trail_percent
-        resp = self.post('/orders', params)
+            params["trail_percent"] = trail_percent
+        resp = self.post("/orders", params)
         return self.response_wrapper(resp, Order)
 
     def get_order_by_client_order_id(self, client_order_id: str) -> Order:
         """Get an order by client order id"""
         params = {
-            'client_order_id': client_order_id,
+            "client_order_id": client_order_id,
         }
-        resp = self.get('/orders:by_client_order_id', params)
+        resp = self.get("/orders:by_client_order_id", params)
         return self.response_wrapper(resp, Order)
 
     def get_order(self, order_id: str, nested: bool = None) -> Order:
         """Get an order"""
         params = {}
         if nested is not None:
-            params['nested'] = nested
-        resp = self.get('/orders/{}'.format(order_id), params)
+            params["nested"] = nested
+        resp = self.get("/orders/{}".format(order_id), params)
         return self.response_wrapper(resp, Order)
 
     def replace_order(
-            self,
-            order_id: str,
-            qty: str = None,
-            limit_price: str = None,
-            stop_price: str = None,
-            trail: str = None,
-            time_in_force: str = None,
-            client_order_id: str = None,
+        self,
+        order_id: str,
+        qty: str = None,
+        limit_price: str = None,
+        stop_price: str = None,
+        trail: str = None,
+        time_in_force: str = None,
+        client_order_id: str = None,
     ) -> Order:
         """
         :param order_id:
@@ -387,31 +418,31 @@ class REST(object):
         """
         params = {}
         if qty is not None:
-            params['qty'] = qty
+            params["qty"] = qty
         if limit_price is not None:
-            params['limit_price'] = FLOAT(limit_price)
+            params["limit_price"] = FLOAT(limit_price)
         if stop_price is not None:
-            params['stop_price'] = FLOAT(stop_price)
+            params["stop_price"] = FLOAT(stop_price)
         if trail is not None:
-            params['trail'] = FLOAT(trail)
+            params["trail"] = FLOAT(trail)
         if time_in_force is not None:
-            params['time_in_force'] = time_in_force
+            params["time_in_force"] = time_in_force
         if client_order_id is not None:
-            params['client_order_id'] = client_order_id
-        resp = self.patch('/orders/{}'.format(order_id), params)
+            params["client_order_id"] = client_order_id
+        resp = self.patch("/orders/{}".format(order_id), params)
         return self.response_wrapper(resp, Order)
 
     def cancel_order(self, order_id: str) -> None:
         """Cancel an order"""
-        self.delete('/orders/{}'.format(order_id))
+        self.delete("/orders/{}".format(order_id))
 
     def cancel_all_orders(self) -> None:
         """Cancel all open orders"""
-        self.delete('/orders')
+        self.delete("/orders")
 
     def list_positions(self) -> Positions:
         """Get a list of open positions"""
-        resp = self.get('/positions')
+        resp = self.get("/positions")
         if self._use_raw_data:
             return resp
         else:
@@ -419,13 +450,16 @@ class REST(object):
 
     def get_position(self, symbol: str) -> Position:
         """Get an open position"""
-        resp = self.get('/positions/{}'.format(symbol))
+        resp = self.get("/positions/{}".format(symbol))
         return self.response_wrapper(resp, Position)
 
-    def close_position(self, symbol: str, *,
-                       qty: float = None,
-                       # percentage: float = None  # currently unsupported api
-                       ) -> Position:
+    def close_position(
+        self,
+        symbol: str,
+        *,
+        qty: float = None,
+        # percentage: float = None  # currently unsupported api
+    ) -> Position:
         """Liquidates the position for the given symbol at market price"""
         # if qty and percentage:
         #     raise Exception("Can't close position with qty and pecentage")
@@ -436,15 +470,15 @@ class REST(object):
         # else:
         #     data = {}
         if qty:
-            data = {'qty': qty}
+            data = {"qty": qty}
         else:
             data = {}
-        resp = self.delete('/positions/{}'.format(symbol), data=data)
+        resp = self.delete("/positions/{}".format(symbol), data=data)
         return self.response_wrapper(resp, Position)
 
     def close_all_positions(self) -> Positions:
         """Liquidates all open positions at market price"""
-        resp = self.delete('/positions')
+        resp = self.delete("/positions")
         if self._use_raw_data:
             return resp
         else:
@@ -453,10 +487,10 @@ class REST(object):
     def list_assets(self, status=None, asset_class=None) -> Assets:
         """Get a list of assets"""
         params = {
-            'status':      status,
-            'asset_class': asset_class,
+            "status": status,
+            "asset_class": asset_class,
         }
-        resp = self.get('/assets', params)
+        resp = self.get("/assets", params)
         if self._use_raw_data:
             return resp
         else:
@@ -464,17 +498,19 @@ class REST(object):
 
     def get_asset(self, symbol: str) -> Asset:
         """Get an asset"""
-        resp = self.get('/assets/{}'.format(symbol))
+        resp = self.get("/assets/{}".format(symbol))
         return self.response_wrapper(resp, Asset)
 
-    def get_barset(self,
-                   symbols,
-                   timeframe: str,
-                   limit: int = None,
-                   start: str = None,
-                   end: str = None,
-                   after: str = None,
-                   until: str = None) -> BarSet:
+    def get_barset(
+        self,
+        symbols,
+        timeframe: str,
+        limit: int = None,
+        start: str = None,
+        end: str = None,
+        after: str = None,
+        until: str = None,
+    ) -> BarSet:
         """
         read the documentation here:
         https://alpaca.markets/docs/api-documentation/api-v2/market-data/bars/
@@ -496,29 +532,26 @@ class REST(object):
         note: start can't be used with after. end cannot be used with until.
         """
         if not isinstance(symbols, str):
-            symbols = ','.join(symbols)
+            symbols = ",".join(symbols)
         params = {
-            'symbols': symbols,
+            "symbols": symbols,
         }
         if limit is not None:
-            params['limit'] = limit
+            params["limit"] = limit
         if start is not None:
-            params['start'] = start
+            params["start"] = start
         if end is not None:
-            params['end'] = end
+            params["end"] = end
         if after is not None:
-            params['after'] = after
+            params["after"] = after
         if until is not None:
-            params['until'] = until
-        resp = self.data_get('/bars/{}'.format(timeframe), params)
+            params["until"] = until
+        resp = self.data_get("/bars/{}".format(timeframe), params)
         return self.response_wrapper(resp, BarSet)
 
-    def get_aggs(self,
-                 symbol: str,
-                 multiplier: int,
-                 timespan: str,
-                 _from: str,
-                 to: str) -> Aggs:
+    def get_aggs(
+        self, symbol: str, multiplier: int, timespan: str, _from: str, to: str
+    ) -> Aggs:
         """
 
         :param symbol: str eg AAPL
@@ -528,27 +561,29 @@ class REST(object):
         :param to: yyyy-mm-dd
         :return:
         """
-        resp = self.data_get('/aggs/ticker/{}/range/{}/{}/{}/{}'.format(
-            symbol, multiplier, timespan, _from, to
-        ))
+        resp = self.data_get(
+            "/aggs/ticker/{}/range/{}/{}/{}/{}".format(
+                symbol, multiplier, timespan, _from, to
+            )
+        )
         return self.response_wrapper(resp, Aggs)
 
     def get_last_trade(self, symbol: str) -> Trade:
         """
         Get the last trade for the given symbol
         """
-        resp = self.data_get('/last/stocks/{}'.format(symbol))
-        return self.response_wrapper(resp['last'], Trade)
+        resp = self.data_get("/last/stocks/{}".format(symbol))
+        return self.response_wrapper(resp["last"], Trade)
 
     def get_last_quote(self, symbol: str) -> Quote:
         """Get the last quote for the given symbol"""
-        resp = self.data_get('/last_quote/stocks/{}'.format(symbol))
-        return self.response_wrapper(resp['last'], Quote)
+        resp = self.data_get("/last_quote/stocks/{}".format(symbol))
+        return self.response_wrapper(resp["last"], Quote)
 
     def _data_get_v2(self, endpoint: str, symbol: str, **kwargs):
         page_token = None
         total_items = 0
-        limit = kwargs.get('limit')
+        limit = kwargs.get("limit")
         while True:
             actual_limit = None
             if limit:
@@ -556,105 +591,98 @@ class REST(object):
                 if actual_limit < 1:
                     break
             data = kwargs
-            data['limit'] = actual_limit
-            data['page_token'] = page_token
-            resp = self.data_get('/stocks/{}/{}'.format(symbol, endpoint),
-                                 data=data, api_version='v2')
-            items = resp.get(endpoint, [])
+            data["limit"] = actual_limit
+            data["page_token"] = page_token
+            resp = self.data_get(
+                "/stocks/{}/{}".format(symbol, endpoint), data=data, api_version="v2"
+            )
+            items = resp.get(endpoint, []) or []
             for item in items:
                 yield item
             total_items += len(items)
-            page_token = resp.get('next_page_token')
+            page_token = resp.get("next_page_token")
             if not page_token:
                 break
 
-    def get_trades_iter(self,
-                        symbol: str,
-                        start: str,
-                        end: str,
-                        limit: int = None,
-                        raw=False) -> TradeIterator:
-        trades = self._data_get_v2('trades', symbol,
-                                   start=start, end=end, limit=limit)
+    def get_trades_iter(
+        self, symbol: str, start: str, end: str, limit: int = None, raw=False
+    ) -> TradeIterator:
+        trades = self._data_get_v2("trades", symbol, start=start, end=end, limit=limit)
         for trade in trades:
             if raw:
                 yield trade
             else:
                 yield self.response_wrapper(trade, Trade)
 
-    def get_trades(self,
-                   symbol: str,
-                   start: str,
-                   end: str,
-                   limit: int = None,
-                   ) -> TradesV2:
-        trades = list(self.get_trades_iter(symbol,
-                                           start,
-                                           end,
-                                           limit,
-                                           raw=True))
+    def get_trades(
+        self,
+        symbol: str,
+        start: str,
+        end: str,
+        limit: int = None,
+    ) -> TradesV2:
+        trades = list(self.get_trades_iter(symbol, start, end, limit, raw=True))
         return TradesV2(trades)
 
-    def get_quotes_iter(self,
-                        symbol: str,
-                        start: str,
-                        end: str,
-                        limit: int = None,
-                        raw=False) -> QuoteIterator:
-        quotes = self._data_get_v2('quotes', symbol,
-                                   start=start, end=end, limit=limit)
+    def get_quotes_iter(
+        self, symbol: str, start: str, end: str, limit: int = None, raw=False
+    ) -> QuoteIterator:
+        quotes = self._data_get_v2("quotes", symbol, start=start, end=end, limit=limit)
         for quote in quotes:
             if raw:
                 yield quote
             else:
                 yield self.response_wrapper(quote, Quote)
 
-    def get_quotes(self,
-                   symbol: str,
-                   start: str,
-                   end: str,
-                   limit: int = None,
-                   ) -> QuotesV2:
-        quotes = list(self.get_quotes_iter(symbol,
-                                           start,
-                                           end,
-                                           limit,
-                                           raw=True))
+    def get_quotes(
+        self,
+        symbol: str,
+        start: str,
+        end: str,
+        limit: int = None,
+    ) -> QuotesV2:
+        quotes = list(self.get_quotes_iter(symbol, start, end, limit, raw=True))
         return QuotesV2(quotes)
 
-    def get_bars_iter(self,
-                      symbol: str,
-                      timeframe: TimeFrame,
-                      start: str,
-                      end: str,
-                      adjustment: str = 'raw',
-                      limit: int = None,
-                      raw=False) -> BarIterator:
-        bars = self._data_get_v2('bars', symbol,
-                                 timeframe=timeframe.value,
-                                 adjustment=adjustment,
-                                 start=start, end=end, limit=limit)
+    def get_bars_iter(
+        self,
+        symbol: str,
+        timeframe: TimeFrame,
+        start: str,
+        end: str,
+        adjustment: str = "raw",
+        limit: int = None,
+        raw=False,
+    ) -> BarIterator:
+        bars = self._data_get_v2(
+            "bars",
+            symbol,
+            timeframe=timeframe.value,
+            adjustment=adjustment,
+            start=start,
+            end=end,
+            limit=limit,
+        )
         for bar in bars:
             if raw:
                 yield bar
             else:
                 yield self.response_wrapper(bar, Bar)
 
-    def get_bars(self,
-                 symbol: str,
-                 timeframe: TimeFrame,
-                 start: str,
-                 end: str,
-                 adjustment: str = 'raw',
-                 limit: int = None,
-                 ) -> BarsV2:
-        bars = list(self.get_bars_iter(symbol,
-                                       timeframe,
-                                       start,
-                                       end,
-                                       adjustment,
-                                       limit,
-                                       raw=True))
+    def get_bars(
+        self,
+        symbol: str,
+        timeframe: TimeFrame,
+        start: str,
+        end: str,
+        adjustment: str = "raw",
+        limit: int = None,
+    ) -> BarsV2:
+        bars = list(
+            self.get_bars_iter(
+                symbol, timeframe, start, end, adjustment, limit, raw=True
+            )
+        )
         return BarsV2(bars)
 
     def get_latest_trade(self, symbol: str) -> TradeV2:
@@ -662,43 +690,42 @@ class REST(object):
         Get the latest trade for the given symbol
         """
         resp = self.data_get(
-                             '/stocks/{}/trades/latest'.format(symbol),
-                             api_version='v2')
-        return self.response_wrapper(resp['trade'], TradeV2)
+            "/stocks/{}/trades/latest".format(symbol), api_version="v2"
+        )
+        return self.response_wrapper(resp["trade"], TradeV2)
 
     def get_latest_quote(self, symbol: str) -> QuoteV2:
         """Get the latest quote for the given symbol"""
         resp = self.data_get(
-                             '/stocks/{}/quotes/latest'.format(symbol),
-                             api_version='v2')
-        return self.response_wrapper(resp['quote'], QuoteV2)
+            "/stocks/{}/quotes/latest".format(symbol), api_version="v2"
+        )
+        return self.response_wrapper(resp["quote"], QuoteV2)
 
     def get_snapshot(self, symbol: str) -> SnapshotV2:
         """Get the snapshot for the given symbol"""
-        resp = self.data_get('/stocks/{}/snapshot'.format(symbol),
-                             api_version='v2')
+        resp = self.data_get("/stocks/{}/snapshot".format(symbol), api_version="v2")
         return self.response_wrapper(resp, SnapshotV2)
 
     def get_snapshots(self, symbols: List[str]) -> SnapshotsV2:
         """Get the snapshots for the given symbols"""
         resp = self.data_get(
-            '/stocks/snapshots?symbols={}'.format(','.join(symbols)),
-            api_version='v2')
+            "/stocks/snapshots?symbols={}".format(",".join(symbols)), api_version="v2"
+        )
         return self.response_wrapper(resp, SnapshotsV2)
 
     def get_clock(self) -> Clock:
-        resp = self.get('/clock')
+        resp = self.get("/clock")
         return self.response_wrapper(resp, Clock)
 
     def get_activities(
-            self,
-            activity_types: str = None,
-            until: str = None,
-            after: str = None,
-            direction: str = None,
-            date: str = None,
-            page_size: int = None,
-            page_token: str = None
+        self,
+        activity_types: str = None,
+        until: str = None,
+        after: str = None,
+        direction: str = None,
+        date: str = None,
+        page_size: int = None,
+        page_token: str = None,
     ) -> AccountActivities:
         """
         go to alpaca.markets/docs/api-documentation/api-v2/account-activities/
@@ -711,24 +738,24 @@ class REST(object):
         :param page_token:
         :return:
         """
-        url = '/account/activities'
+        url = "/account/activities"
         params = {}
         if isinstance(activity_types, list):
-            params['activity_types'] = ','.join(activity_types)
+            params["activity_types"] = ",".join(activity_types)
         elif activity_types is not None:
-            url += '/{}'.format(activity_types)
+            url += "/{}".format(activity_types)
         if after is not None:
-            params['after'] = after
+            params["after"] = after
         if until is not None:
-            params['until'] = until
+            params["until"] = until
         if direction is not None:
-            params['direction'] = direction
+            params["direction"] = direction
         if date is not None:
-            params['date'] = date
+            params["date"] = date
         if page_size is not None:
-            params['page_size'] = page_size
+            params["page_size"] = page_size
         if page_token is not None:
-            params['page_token'] = page_token
+            params["page_token"] = page_token
         resp = self.get(url, data=params)
         if self._use_raw_data:
             return resp
@@ -743,10 +770,10 @@ class REST(object):
         """
         params = {}
         if start is not None:
-            params['start'] = start
+            params["start"] = start
         if end is not None:
-            params['end'] = end
-        resp = self.get('/calendar', data=params)
+            params["end"] = end
+        resp = self.get("/calendar", data=params)
         if self._use_raw_data:
             return resp
         else:
@@ -754,7 +781,7 @@ class REST(object):
 
     def get_watchlists(self) -> Watchlists:
         """Get the list of watchlists registered under the account"""
-        resp = self.get('/watchlists')
+        resp = self.get("/watchlists")
         if self._use_raw_data:
             return resp
         else:
@@ -762,63 +789,62 @@ class REST(object):
 
     def get_watchlist(self, watchlist_id: str) -> Watchlist:
         """Get a watchlist identified by the ID"""
-        resp = self.get('/watchlists/{}'.format((watchlist_id)))
+        resp = self.get("/watchlists/{}".format((watchlist_id)))
         return self.response_wrapper(resp, Watchlist)
 
     def get_watchlist_by_name(self, watchlist_name: str) -> Watchlist:
         """Get a watchlist identified by its name"""
         params = {
-            'name': watchlist_name,
+            "name": watchlist_name,
         }
-        resp = self.get('/watchlists:by_name', data=params)
+        resp = self.get("/watchlists:by_name", data=params)
         return self.response_wrapper(resp, Watchlist)
 
-    def create_watchlist(self,
-                         watchlist_name: str,
-                         symbols=None) -> Watchlist:
+    def create_watchlist(self, watchlist_name: str, symbols=None) -> Watchlist:
         """Create a new watchlist with an optional initial set of assets"""
         params = {
-            'name': watchlist_name,
+            "name": watchlist_name,
         }
         if symbols is not None:
-            params['symbols'] = symbols
-        resp = self.post('/watchlists', data=params)
+            params["symbols"] = symbols
+        resp = self.post("/watchlists", data=params)
         return self.response_wrapper(resp, Watchlist)
 
     def add_to_watchlist(self, watchlist_id: str, symbol: str) -> Watchlist:
         """Add an asset to the watchlist"""
         resp = self.post(
-            '/watchlists/{}'.format(watchlist_id), data=dict(symbol=symbol)
+            "/watchlists/{}".format(watchlist_id), data=dict(symbol=symbol)
         )
         return self.response_wrapper(resp, Watchlist)
 
-    def update_watchlist(self,
-                         watchlist_id: str,
-                         name: str = None,
-                         symbols=None) -> Watchlist:
+    def update_watchlist(
+        self, watchlist_id: str, name: str = None, symbols=None
+    ) -> Watchlist:
         """Update a watchlist's name and/or asset list"""
         params = {}
         if name is not None:
-            params['name'] = name
+            params["name"] = name
         if symbols is not None:
-            params['symbols'] = symbols
-        resp = self.put('/watchlists/{}'.format(watchlist_id), data=params)
+            params["symbols"] = symbols
+        resp = self.put("/watchlists/{}".format(watchlist_id), data=params)
         return self.response_wrapper(resp, Watchlist)
 
     def delete_watchlist(self, watchlist_id: str) -> None:
         """Delete a watchlist identified by the ID permanently"""
-        self.delete('/watchlists/{}'.format(watchlist_id))
+        self.delete("/watchlists/{}".format(watchlist_id))
 
     def delete_from_watchlist(self, watchlist_id: str, symbol: str) -> None:
         """Remove an asset from the watchlist's asset list"""
-        self.delete('/watchlists/{}/{}'.format(watchlist_id, symbol))
+        self.delete("/watchlists/{}/{}".format(watchlist_id, symbol))
 
-    def get_portfolio_history(self,
-                              date_start: str = None,
-                              date_end: str = None,
-                              period: str = None,
-                              timeframe=None,
-                              extended_hours: bool = None) -> PortfolioHistory:
+    def get_portfolio_history(
+        self,
+        date_start: str = None,
+        date_end: str = None,
+        period: str = None,
+        timeframe=None,
+        extended_hours: bool = None,
+    ) -> PortfolioHistory:
         """
         alpaca.markets/docs/api-documentation/api-v2/portfolio-history/
         :param date_start: YYYY-MM-DD
@@ -833,16 +859,16 @@ class REST(object):
         """
         params = {}
         if date_start is not None:
-            params['date_start'] = date_start
+            params["date_start"] = date_start
         if date_end is not None:
-            params['date_end'] = date_end
+            params["date_end"] = date_end
         if period is not None:
-            params['period'] = period
+            params["period"] = period
         if timeframe is not None:
-            params['timeframe'] = timeframe
+            params["timeframe"] = timeframe
         if extended_hours is not None:
-            params['extended_hours'] = extended_hours
-        resp = self.get('/account/portfolio/history', data=params)
+            params["extended_hours"] = extended_hours
+        resp = self.get("/account/portfolio/history", data=params)
         return self.response_wrapper(resp, PortfolioHistory)
 
     def __enter__(self):
