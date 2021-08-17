@@ -58,7 +58,7 @@ class _StreamConn(object):
             },
         }
 
-        ws = await websockets.connect(self._endpoint)
+        ws = await websockets.connect(self._endpoint, close_timeout=1)
         await ws.send(json.dumps(message))
         r = await ws.recv()
         if isinstance(r, bytes):
@@ -106,7 +106,7 @@ class _StreamConn(object):
                     await self._dispatch(stream, msg)
         except websockets.WebSocketException as wse:
             logging.warn(wse)
-            await self.close()
+            self._ws = None
             asyncio.ensure_future(self._ensure_ws())
 
     async def _ensure_ws(self):
