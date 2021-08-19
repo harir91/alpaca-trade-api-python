@@ -52,13 +52,10 @@ class _StreamConn(object):
             "action": "authenticate",
             "data": {"oauth_token": self._oauth}
             if self._oauth
-            else {
-                "key_id": self._key_id,
-                "secret_key": self._secret_key,
-            },
+            else {"key_id": self._key_id, "secret_key": self._secret_key,},
         }
 
-        ws = await websockets.connect(self._endpoint, close_timeout=1)
+        ws = await websockets.connect(self._endpoint)
         await ws.send(json.dumps(message))
         r = await ws.recv()
         if isinstance(r, bytes):
@@ -69,17 +66,13 @@ class _StreamConn(object):
             status = msg.get("data").get("status")
             if status != "authorized":
                 raise ValueError(
-                    (
-                        f"Invalid Alpaca API credentials, Failed to "
-                        f"authenticate: {msg}"
-                    )
+                    (f"Invalid Alpaca API credentials, Failed to " f"authenticate: {msg}")
                 )
             else:
                 self._retries = 0
         elif msg.get("data", {}).get("error"):
             raise Exception(
-                f"Error while connecting to {self._endpoint}:"
-                f"{msg.get('data').get('error')}"
+                f"Error while connecting to {self._endpoint}:" f"{msg.get('data').get('error')}"
             )
         else:
             self._retries = 0
@@ -121,7 +114,7 @@ class _StreamConn(object):
                 break
             except websockets.WebSocketException as wse:
                 logging.warn(wse)
-                self._ws = None
+                await self.close()
                 self._retries += 1
                 await asyncio.sleep(self._retry_wait * self._retry)
         else:
@@ -135,16 +128,7 @@ class _StreamConn(object):
         if len(channels) > 0:
             await self._ensure_ws()
             self._streams |= set(channels)
-            await self._ws.send(
-                json.dumps(
-                    {
-                        "action": "listen",
-                        "data": {
-                            "streams": channels,
-                        },
-                    }
-                )
-            )
+            await self._ws.send(json.dumps({"action": "listen", "data": {"streams": channels,},}))
 
     async def unsubscribe(self, channels):
         if isinstance(channels, str):
@@ -153,14 +137,7 @@ class _StreamConn(object):
             channels = list(channels)
         if len(channels) > 0:
             await self._ws.send(
-                json.dumps(
-                    {
-                        "action": "unlisten",
-                        "data": {
-                            "streams": channels,
-                        },
-                    }
-                )
+                json.dumps({"action": "unlisten", "data": {"streams": channels,},})
             )
 
     async def close(self):
@@ -177,13 +154,9 @@ class _StreamConn(object):
         if channel == "account_updates":
             return Account(msg)
         if channel.startswith("T."):
-            return Trade(
-                {trade_mapping[k]: v for k, v in msg.items() if k in trade_mapping}
-            )
+            return Trade({trade_mapping[k]: v for k, v in msg.items() if k in trade_mapping})
         if channel.startswith("Q."):
-            return Quote(
-                {quote_mapping[k]: v for k, v in msg.items() if k in quote_mapping}
-            )
+            return Quote({quote_mapping[k]: v for k, v in msg.items() if k in quote_mapping})
         if channel.startswith("A.") or channel.startswith("AM."):
             # to be compatible with REST Agg
             msg["t"] = msg["s"]
@@ -241,9 +214,7 @@ class StreamConn(object):
         :param raw_data: should we return stream data raw or wrap it with
                          Entity objects.
         """
-        self._key_id, self._secret_key, self._oauth = get_credentials(
-            key_id, secret_key, oauth
-        )
+        self._key_id, self._secret_key, self._oauth = get_credentials(key_id, secret_key, oauth)
         self._base_url = base_url or get_base_url()
         self._data_url = data_url or get_data_url()
         if data_stream is not None:
@@ -259,11 +230,7 @@ class StreamConn(object):
         self._stop_stream_queue = queue.Queue()
 
         self.trading_ws = _StreamConn(
-            self._key_id,
-            self._secret_key,
-            self._base_url,
-            self._oauth,
-            raw_data=self._raw_data,
+            self._key_id, self._secret_key, self._base_url, self._oauth, raw_data=self._raw_data,
         )
 
         if self._data_stream == "polygon":
@@ -273,9 +240,7 @@ class StreamConn(object):
             if endpoint:
                 os.environ["POLYGON_WS_URL"] = endpoint
             self.data_ws = polygon.StreamConn(
-                self._key_id + "-staging"
-                if "staging" in self._base_url
-                else self._key_id,
+                self._key_id + "-staging" if "staging" in self._base_url else self._key_id,
                 raw_data=self._raw_data,
             )
             self._data_prefixes = ("Q.", "T.", "A.", "AM.")
@@ -324,8 +289,7 @@ class StreamConn(object):
             else:
                 raise ValueError(
                     (
-                        "unknown channel {} (you may need to specify "
-                        + "the right data_stream)"
+                        "unknown channel {} (you may need to specify " + "the right data_stream)"
                     ).format(c)
                 )
 
@@ -346,8 +310,7 @@ class StreamConn(object):
 
     async def consume(self):
         await asyncio.gather(
-            self.trading_ws.consume(),
-            self.data_ws.consume(),
+            self.trading_ws.consume(), self.data_ws.consume(),
         )
 
     def run(self, initial_channels: List[str] = []):
@@ -399,9 +362,7 @@ class StreamConn(object):
             )
             if self._data_stream == "polygon":
                 self.data_ws = polygon.StreamConn(
-                    self._key_id + "-staging"
-                    if "staging" in self._base_url
-                    else self._key_id,
+                    self._key_id + "-staging" if "staging" in self._base_url else self._key_id,
                     raw_data=self._raw_data,
                 )
             else:
