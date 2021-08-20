@@ -16,9 +16,7 @@ class StreamConn(object):
         """
         self._key_id = get_polygon_credentials(key_id)
         self._endpoint: URL = URL(
-            os.environ.get("POLYGON_WS_URL", "wss://socket.polygon.io/stocks").rstrip(
-                "/"
-            )
+            os.environ.get("POLYGON_WS_URL", "wss://socket.polygon.io/stocks").rstrip("/")
         )
         self._handlers = {}
         self._handler_symbols = {}
@@ -35,14 +33,12 @@ class StreamConn(object):
         await self._dispatch(
             {"ev": "status", "status": "connecting", "message": "Connecting to Polygon"}
         )
-        self._ws = await websockets.connect(self._endpoint, close_timeout=1)
+        self._ws = await websockets.connect(self._endpoint)
         self._stream = self._recv()
 
         msg = await self._next()
         if msg.get("status") != "connected":
-            raise ValueError(
-                ("Invalid response on Polygon websocket connection: {}".format(msg))
-            )
+            raise ValueError(("Invalid response on Polygon websocket connection: {}".format(msg)))
         await self._dispatch(msg)
         logging.info(f"connected to: {self._endpoint}")
         if await self.authenticate():
@@ -66,9 +62,7 @@ class StreamConn(object):
             await self._dispatch(data)
             return True
         else:
-            raise ValueError(
-                "Invalid Polygon credentials, " f"Failed to authenticate: {data}"
-            )
+            raise ValueError("Invalid Polygon credentials, " f"Failed to authenticate: {data}")
 
     async def _next(self):
         """Returns the next message available"""
@@ -163,9 +157,7 @@ class StreamConn(object):
             # Join channel list to string
             streams = ",".join(channels)
             self._streams -= set(channels)
-            await self._ws.send(
-                json.dumps({"action": "unsubscribe", "params": streams})
-            )
+            await self._ws.send(json.dumps({"action": "unsubscribe", "params": streams}))
 
     def run(self, initial_channels=[]):
         """Run forever and block until exception is raised.
@@ -194,13 +186,9 @@ class StreamConn(object):
 
     def _cast(self, subject, data):
         if subject == "T":
-            return Trade(
-                {trade_mapping[k]: v for k, v in data.items() if k in trade_mapping}
-            )
+            return Trade({trade_mapping[k]: v for k, v in data.items() if k in trade_mapping})
         if subject == "Q":
-            return Quote(
-                {quote_mapping[k]: v for k, v in data.items() if k in quote_mapping}
-            )
+            return Quote({quote_mapping[k]: v for k, v in data.items() if k in quote_mapping})
         if subject == "AM" or subject == "A":
             return Agg({agg_mapping[k]: v for k, v in data.items() if k in agg_mapping})
         return Entity(data)
